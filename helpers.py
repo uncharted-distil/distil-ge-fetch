@@ -1,8 +1,9 @@
 """
-    helpers.py
+Utilities for computing geohashes and fetching data from Google Earth Engine.  Copied
+from https://github.com/cfld/locusts/, with a small amount of cleanup done.
 """
+
 import os
-from joblib import Parallel, delayed
 from shapely import geometry
 from itertools import product
 from polygon_geohasher.polygon_geohasher import (
@@ -17,6 +18,7 @@ from urllib.request import urlretrieve
 
 # --
 # Generic
+
 
 @backoff.on_exception(backoff.constant, urllib.error.HTTPError, max_tries=4, interval=2)
 def safe_urlretrieve(url, outpath):
@@ -66,7 +68,7 @@ def polygon2geohash(polygon, precision=6, coarse_precision=None, inner=True):
     polygon = geometry.shape(polygon.toGeoJSON())
 
     if coarse_precision is None:
-        geohashes = polygon_to_geohashes(geojson, precision=precision, inner=inner)
+        geohashes = polygon_to_geohashes(polygon, precision=precision, inner=inner)
     else:
         geohashes = polygon_to_geohashes(
             polygon, precision=coarse_precision, inner=inner
