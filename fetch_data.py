@@ -1,4 +1,5 @@
 import argparse
+from datetime import date, timedelta
 import json
 import os
 import random
@@ -48,15 +49,24 @@ def main():
             polygon, precision=args.precision, coarse_precision=args.precision
         )
 
-        # Create records for each geohash
-        for geohash in geohashes_aoi:
-            locs.append(
-                {
-                    "date_start": args.start_date,
-                    "date_end": args.end_date,
-                    "geohash": geohash,
-                }
+        # generate request times
+        delta = date.fromisoformat(args.end_date) - date.fromisoformat(args.start_date)
+        interval = 30
+        for i in range(int(delta.days / interval)):
+            start_date = date.fromisoformat(args.start_date) + timedelta(
+                days=i * interval
             )
+            end_date = start_date + timedelta(days=interval)
+
+            # Create records for each geohash
+            for geohash in geohashes_aoi:
+                locs.append(
+                    {
+                        "date_start": str(start_date),
+                        "date_end": str(end_date),
+                        "geohash": geohash,
+                    }
+                )
     else:
         # assume this a previously saved set of requests
         locs = input_json
