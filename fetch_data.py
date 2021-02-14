@@ -10,12 +10,17 @@ import helpers
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Fetches tiles from a Google Earth Engine collection based on time range, "
+        + "coverage and geohash level."
+    )
+    parser.add_argument("--collection", type=str, default=helpers.SENTINEL_2_CHANNELS)
     parser.add_argument("--outdir", type=str, default="output")
     parser.add_argument("--input_file", type=str)
     parser.add_argument("--precision", type=int, default=5)
     parser.add_argument("--start_date", type=str, default="2020-01-01")
     parser.add_argument("--end_date", type=str, default="2020-02-01")
+    parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
     parser.add_argument(
         "--save_requests", dest="save_requests", default=False, action="store_true"
@@ -28,16 +33,28 @@ def parse_args():
 
 
 def main():
-
+    # initialize earth engine
     ee.Initialize()
 
     args = parse_args()
     print(args)
 
-    # get aoi geometry or load from a json file
+    # for now we define bands by collection, but this can be made more general by supplying
+    # as an argument or via config
+    bands = helpers.SENTINEL_2_CHANNELS
+    collection = helpers.SENTINEL_2_COLLECTION
+    if args.collection == helpers.SENTINEL_2_COLLECTION:
+        collection = args.collection
+        bands = helpers.SENTINEL_2_CHANNELS
+    elif args.collection == helpers.COPERNICUS_LAND_COVER_COLLECTION:
+        collection = args.collection
+        bands = helpers.COPERNICUS_LAND_COVER_CHANNELS
+
+    # get AoI geometry or load from a json file
     locs = []
     input_json = json.load(open(args.input_file))
     is_geo_json = False
+
     # assume list is a previously saved set of requests, dict is geojson
     if type(input_json) is dict:
         is_geo_json = True
@@ -45,13 +62,13 @@ def main():
         polygon = ee.Geometry.Polygon(aoi["geometry"]["coordinates"])
 
         # determine geohashes that overlap our AoI
-        geohashes_aoi = helpers.polygon2geohash(
+        geohashes_aoi = helpers.poly_to_geohashes(
             polygon, precision=args.precision, coarse_precision=args.precision
         )
 
         # generate request times
         delta = date.fromisoformat(args.end_date) - date.fromisoformat(args.start_date)
-        interval = 30
+        interval = args.interval
         for i in range(int(delta.days / interval)):
             start_date = date.fromisoformat(args.start_date) + timedelta(
                 days=i * interval
@@ -71,6 +88,9 @@ def main():
         # assume this a previously saved set of requests
         locs = input_json
 
+    # save the metadata associated with the collection and bands we are fetching
+    helpers.fetch_metadata(locs[0], args.outdir, collection, bands)
+
     # Prepare to load data
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -84,7 +104,7 @@ def main():
     if not args.skip_fetch:
         jobs = []
         for loc in locs:
-            job = delayed(helpers.get_one_sentinel)(loc, outdir=args.outdir)
+            job = delayed(helpers.fetch_tile)(loc, args.outdir, collection, bands)
             jobs.append(job)
 
         random.shuffle(jobs)

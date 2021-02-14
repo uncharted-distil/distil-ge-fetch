@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "shape": "Rectangle",
+        "name": "Unnamed Layer",
+        "category": "default"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [38.153458, 14.220457],
+            [38.153458, 13.986044],
+            [38.409576, 13.986044],
+            [38.409576, 14.220457],
+            [38.153458, 14.220457]
+          ]
+        ]
+      },
+      "id": "9ea4ce8f-8f64-4ebd-b0b8-52515c0b7c99"
+    }
+  ]
+}
