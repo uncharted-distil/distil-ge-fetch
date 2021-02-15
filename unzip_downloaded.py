@@ -53,3 +53,9 @@ for entry in tqdm.tqdm(entries):
     except:
         continue
     shutil.rmtree(temp_path)
+
+# copy over metadata file
+shutil.copyfile(
+    os.path.join(args.download_location, "metadata.json"),
+    os.path.join(args.output_location, "metadata.json"),
+)
