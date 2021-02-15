@@ -1,4 +1,4 @@
-# ge-fetch
+# distil-ge-fetch
 Python script for fetching Google Earth Engine tiles based on an area of interest, geohash level, and start / end time.  Can also fetch based on an input JSON file.  Note that an activated Google Earth Engine account is required.
 
 Example usage for fetch:
