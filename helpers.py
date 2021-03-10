@@ -147,7 +147,7 @@ def generate_fetch_requests_poi(
     points = poi_geojson["features"]
 
     start_iso = date.fromisoformat(start_date)
-    end_iso = date.fromisoformat(start_date)
+    end_iso = date.fromisoformat(end_date)
 
     geohash_points = set()
     # loop through the points of interest and clip each to the geographic and time bounds
