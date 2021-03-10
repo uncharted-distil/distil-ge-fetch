@@ -1,5 +1,4 @@
 import argparse
-from datetime import date, timedelta
 import json
 import os
 import random
@@ -12,16 +11,21 @@ import helpers
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Fetches tiles from a Google Earth Engine collection based on time range, "
-        + "coverage and geohash level."
+        + "coverage and geohash level.  All tiles within the coverage area will be fetched by default. "
+        + "If a list of points of interest is provided, tiles overlapping the points, and within a specified "
+        + "cell radius, will be clipped to the coverage area and fetched."
     )
     parser.add_argument("--collection", type=str, default=helpers.SENTINEL_2_CHANNELS)
     parser.add_argument("--outdir", type=str, default="output")
     parser.add_argument("--input_file", type=str)
+    parser.add_argument("--coverage_file", type=str)
+    parser.add_argument("--poi_file", type=str, default="")
     parser.add_argument("--precision", type=int, default=5)
     parser.add_argument("--start_date", type=str, default="2020-01-01")
     parser.add_argument("--end_date", type=str, default="2020-02-01")
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
+    parser.add_argument("--sampling", type=float, default=1.0)
     parser.add_argument(
         "--save_requests", dest="save_requests", default=False, action="store_true"
     )
@@ -50,46 +54,45 @@ def main():
         collection = args.collection
         bands = helpers.COPERNICUS_LAND_COVER_CHANNELS
 
-    # get AoI geometry or load from a json file
     locs = []
-    input_json = json.load(open(args.input_file))
     is_geo_json = False
 
-    # assume list is a previously saved set of requests, dict is geojson
-    if type(input_json) is dict:
-        is_geo_json = True
-        aoi = input_json["features"][0]
-        polygon = ee.Geometry.Polygon(aoi["geometry"]["coordinates"])
-
-        # determine geohashes that overlap our AoI
-        geohashes_aoi = helpers.poly_to_geohashes(
-            polygon, precision=args.precision, coarse_precision=args.precision
-        )
-
-        # generate request times
-        delta = date.fromisoformat(args.end_date) - date.fromisoformat(args.start_date)
-        interval = args.interval
-        for i in range(int(delta.days / interval)):
-            start_date = date.fromisoformat(args.start_date) + timedelta(
-                days=i * interval
-            )
-            end_date = start_date + timedelta(days=interval)
-
-            # Create records for each geohash
-            for geohash in geohashes_aoi:
-                locs.append(
-                    {
-                        "date_start": str(start_date),
-                        "date_end": str(end_date),
-                        "geohash": geohash,
-                    }
-                )
-    else:
-        # assume this a previously saved set of requests
+    if args.input_file:
+        # loading previously saved requests
+        input_json = json.load(open(args.input_file))
         locs = input_json
 
+    if args.coverage_file:
+        # loading coverage polygon from geo json file
+        is_geo_json = True
+        coverage_geojson = json.load(open(args.coverage_file))
+
+        if args.poi_file is None:
+            locs = helpers.generate_fetch_requests(
+                coverage_geojson,
+                args.precision,
+                args.start_date,
+                args.end_date,
+                args.interval,
+                args.sampling,
+            )
+        else:
+            # load points of interest from geo json file
+            poi_geojson = json.load(open(args.poi_file))
+
+            locs = helpers.generate_fetch_requests_poi(
+                coverage_geojson,
+                poi_geojson,
+                args.precision,
+                args.start_date,
+                args.end_date,
+                args.interval,
+                5,
+                sampling_rate=args.sampling,
+            )
+
     # save the metadata associated with the collection and bands we are fetching
-    helpers.fetch_metadata(locs[0], args.outdir, collection, bands)
+    helpers.fetch_metadata(args.outdir, collection, bands)
 
     # Prepare to load data
     os.makedirs(args.outdir, exist_ok=True)

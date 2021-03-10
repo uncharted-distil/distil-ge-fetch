@@ -1,0 +1,35 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "date": "2018-01-01"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [38.279689, 14.100745]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "date": "2018-01-01"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [38.25858, 14.10508]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "date": "2018-02-01"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [37.967954, 13.925798]
+      }
+    }
+  ]
+}

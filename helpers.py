@@ -6,15 +6,20 @@ from https://github.com/cfld/locusts/, with a small amount of cleanup done.
 import os
 from shapely import geometry
 from itertools import product
+import geohash
 from polygon_geohasher.polygon_geohasher import (
     polygon_to_geohashes,
     geohashes_to_polygon,
 )
+from datetime import date, timedelta
+from dateutil.parser import parse
 import ee
 import backoff
+import random
 import urllib
 from urllib.request import urlretrieve
 import json
+import math
 
 GEOHASH_CHARACTERS = [
     "0",
@@ -55,7 +60,6 @@ GEOHASH_CHARACTERS = [
 # Converts a polygon into a list of intersected / contained geohashes
 def poly_to_geohashes(polygon, precision=6, coarse_precision=None, inner=True):
     polygon = geometry.shape(polygon.toGeoJSON())
-
     if coarse_precision is None:
         geohashes = polygon_to_geohashes(polygon, precision=precision, inner=inner)
     else:
@@ -77,6 +81,135 @@ def geohashes_to_cells(geohashes):
     cells = [geohashes_to_polygon([h]) for h in geohashes]
     cells = [ee.Geometry(geometry.mapping(c)) for c in cells]
     return cells
+
+
+# Generates tile fetch requests given an input coverage polygon,
+# geohash precision, start and date, and
+# interval.
+def generate_fetch_requests(
+    coverage_geojson,
+    precision,
+    start_date,
+    end_date,
+    interval_days,
+    sampling_rate=1.0,
+):
+    # TODO: better validation
+    assert coverage_geojson["type"] == "FeatureCollection"
+    polygon = coverage_geojson["features"][0]
+    assert polygon["type"] == "Feature"
+    assert polygon["geometry"]["type"] == "Polygon"
+
+    # determine geohashes that overlap our AoI
+    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
+    geohashes_aoi = poly_to_geohashes(
+        geom_polygon, precision=precision, coarse_precision=precision
+    )
+
+    # randomly sample a subset
+    random.shuffle(geohashes_aoi)
+    subset_length = math.floor(len(geohashes_aoi) * sampling_rate)
+    geohashes_sampled = geohashes_aoi[:subset_length]
+
+    # generate request times
+    return generate_interval_requests(
+        geohashes_sampled, start_date, end_date, interval_days
+    )
+
+
+# Generates tile fetch requests given an input coverage polygon,
+# geohash precision, optional points of interest, start and date, and
+# interval.
+def generate_fetch_requests_poi(
+    coverage_geojson,
+    poi_geojson,
+    precision,
+    start_date,
+    end_date,
+    interval_days=30,
+    poi_expansion=1,
+    sampling_rate=1.0,
+):
+    # TODO: better validation
+    assert coverage_geojson["type"] == "FeatureCollection"
+    polygon = coverage_geojson["features"][0]
+    assert polygon["type"] == "Feature"
+    assert polygon["geometry"]["type"] == "Polygon"
+
+    # determine geohashes that overlap our AoI
+    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
+    geohashes_aoi = poly_to_geohashes(
+        geom_polygon, precision=precision, coarse_precision=precision
+    )
+
+    assert poi_geojson["type"] == "FeatureCollection"
+
+    points = poi_geojson["features"]
+
+    start_iso = date.fromisoformat(start_date)
+    end_iso = date.fromisoformat(start_date)
+
+    geohash_points = set()
+    # loop through the points of interest and clip each to the geographic and time bounds
+    for point in points:
+        assert point["type"] == "Feature"
+        assert point["geometry"]["type"] == "Point"
+        assert point["properties"] is not None
+        assert point["properties"]["date"] is not None
+
+        # point_date = parse(point["properties"]["date"])
+        point_iso = date.fromisoformat(point["properties"]["date"])
+        if point_iso >= start_iso and point_iso <= end_iso:
+            coords = point["geometry"]["coordinates"]
+            geohash_points.add(
+                geohash.encode(coords[1], coords[0], precision=precision)
+            )
+    clipped_geohashes = geohash_points.intersection(geohashes_aoi)
+
+    # expand outward N steps
+    expansion_geohashes = set(clipped_geohashes)
+    for _ in range(poi_expansion):
+        for geo_hash in list(expansion_geohashes):
+            expansion_geohashes |= set(geohash.expand(geo_hash))
+
+    # clip to geobounds again
+    clipped_expansion_geohashes = list(expansion_geohashes.intersection(geohashes_aoi))
+
+    # grab a random subset of the data and merge it with the original set
+    random.shuffle(clipped_expansion_geohashes)
+    subset_length = math.floor(len(clipped_expansion_geohashes) * sampling_rate)
+    clipped_expansion_geohashes = clipped_expansion_geohashes[:subset_length]
+    clipped_expansion_geohashes.extend(list(clipped_geohashes))
+    final_geohashes = list(set(clipped_expansion_geohashes))
+
+    # generate requests
+    return generate_interval_requests(
+        final_geohashes, start_date, end_date, interval_days
+    )
+
+
+def generate_interval_requests(geohashes, start_date, end_date, interval_days):
+    fetch_requests = []
+
+    # generate request times
+    delta = date.fromisoformat(end_date) - date.fromisoformat(start_date)
+    for i in range(int(delta.days / interval_days)):
+        curr_start_date = date.fromisoformat(start_date) + timedelta(
+            days=i * interval_days
+        )
+        curr_end_date = curr_start_date + timedelta(days=interval_days)
+
+        # Create records for each geohash
+        for geohash in geohashes:
+            fetch_requests.append(
+                {
+                    "date_start": str(curr_start_date),
+                    "date_end": str(curr_end_date),
+                    "geohash": geohash,
+                }
+            )
+
+    return fetch_requests
 
 
 # Earth Engine collection info.  A more flexible design
@@ -121,7 +254,10 @@ def mask_s2_clouds(image):
 
 
 # Write the metadata from the first tile in the collection out
-def fetch_metadata(loc, outdir, collection, bands):
+def fetch_metadata(outdir, collection, bands):
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+
     outpath = os.path.join(outdir, "metadata.json")
     dataset = ee.ImageCollection(collection).select(bands)
     example_tile_info = dataset.toList(1).get(0).getInfo()
