@@ -1,3 +1,12 @@
+"""
+Utility for unzipping data fetched from google earth engine and renaming according to the
+scheme used by Sentinel-2 for distribution, which is {ID}_{BAND}_{TIMESTAMP}.tif.  Examples:
+
+FFA1_B01_20201112T000000.tif
+FFA1_B02_20201112T000000.tif
+
+"""
+
 import argparse
 import zipfile
 import os
@@ -6,7 +15,10 @@ import tqdm
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Utility for unzipping data fetched from google earth engine "
+        + "and renaming according to the scheme used by Sentinel-2 for distribution"
+    )
     parser.add_argument("--download_location", type=str)
     parser.add_argument("--output_location", type=str)
 
