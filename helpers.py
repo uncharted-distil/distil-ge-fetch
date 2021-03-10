@@ -157,8 +157,8 @@ def generate_fetch_requests_poi(
         assert point["properties"] is not None
         assert point["properties"]["date"] is not None
 
-        # point_date = parse(point["properties"]["date"])
-        point_iso = date.fromisoformat(point["properties"]["date"])
+        point_iso = parse(point["properties"]["date"]).date()
+        # point_iso = date.fromisoformat(point["properties"]["date"])
         if point_iso >= start_iso and point_iso <= end_iso:
             coords = point["geometry"]["coordinates"]
             geohash_points.add(

@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
     parser.add_argument("--sampling", type=float, default=1.0)
+    parser.add_argument("--expansion", type=int, default=10)
     parser.add_argument(
         "--save_requests", dest="save_requests", default=False, action="store_true"
     )
@@ -87,7 +88,7 @@ def main():
                 args.start_date,
                 args.end_date,
                 args.interval,
-                5,
+                args.expansion,
                 sampling_rate=args.sampling,
             )
 
