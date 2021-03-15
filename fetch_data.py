@@ -42,7 +42,6 @@ def main():
     ee.Initialize()
 
     args = parse_args()
-    print(args)
 
     # for now we define bands by collection, but this can be made more general by supplying
     # as an argument or via config
@@ -55,60 +54,80 @@ def main():
         collection = args.collection
         bands = helpers.COPERNICUS_LAND_COVER_CHANNELS
 
-    locs = []
+    requests = []
     is_geo_json = False
 
     if args.input_file:
-        # loading previously saved requests
+        # loads previously saved requests
         input_json = json.load(open(args.input_file))
-        locs = input_json
+        requests = input_json
 
-    if args.coverage_file:
+    else:
         # loading coverage polygon from geo json file
         is_geo_json = True
         coverage_geojson = json.load(open(args.coverage_file))
 
-        if args.poi_file is None:
-            locs = helpers.generate_fetch_requests(
-                coverage_geojson,
-                args.precision,
-                args.start_date,
-                args.end_date,
-                args.interval,
-                args.sampling,
-            )
-        else:
+        # generate geohashes covered by the AoI
+        geohashes_aoi = helpers.geohashes_from_geojson_poly(
+            coverage_geojson, args.precision
+        )
+
+        # generate geohash + intervals, applying sampling
+        request_data = helpers.generate_fetch_requests(
+            geohashes_aoi,
+            args.start_date,
+            args.end_date,
+            args.interval,
+            args.sampling,
+        )
+
+        if args.poi_file is not None:
             # load points of interest from geo json file
             poi_geojson = json.load(open(args.poi_file))
 
-            locs = helpers.generate_fetch_requests_poi(
-                coverage_geojson,
+            # generate the geohashes containing each PoI, clipped geospatially and
+            # temporally to the AoI and time bounds
+            geohashes_poi = helpers.geohashes_from_geojson_points(
+                geohashes_aoi,
                 poi_geojson,
-                args.precision,
                 args.start_date,
                 args.end_date,
+                args.precision,
+            )
+
+            # merge the AoI geohash samples with the PoI data
+            request_data = helpers.generate_fetch_requests_poi(
+                request_data,
+                geohashes_poi,
                 args.interval,
-                args.expansion,
-                sampling_rate=args.sampling,
+            )
+
+        # encode request data as json
+        for d in request_data:
+            requests.append(
+                {
+                    "geohash": d[0],
+                    "date_start": str(d[1][0]),
+                    "date_end": str(d[1][1]),
+                }
             )
 
     # save the metadata associated with the collection and bands we are fetching
     helpers.fetch_metadata(args.outdir, collection, bands)
 
-    # Prepare to load data
     os.makedirs(args.outdir, exist_ok=True)
 
     # save fetched tile info to json if required
     if args.save_requests and is_geo_json:
         output_path = os.path.join(args.outdir, "requests.json")
         with open(output_path, "w+") as json_file:
-            json.dump(locs, json_file, indent=4)
+            json.dump(requests, json_file, indent=4)
 
     # Run jobs in parallel
     if not args.skip_fetch:
         jobs = []
-        for loc in locs:
-            job = delayed(helpers.fetch_tile)(loc, args.outdir, collection, bands)
+        for request in requests:
+            job = delayed(helpers.fetch_tile)(request, args.outdir, collection, bands)
             jobs.append(job)
 
         random.shuffle(jobs)

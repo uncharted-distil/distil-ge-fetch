@@ -21,6 +21,8 @@ from urllib.request import urlretrieve
 import json
 import math
 
+from shapely.geometry import geo
+
 GEOHASH_CHARACTERS = [
     "0",
     "1",
@@ -83,131 +85,111 @@ def geohashes_to_cells(geohashes):
     return cells
 
 
+# Generates a set of geohashes that are covered by a geojson polygon
+def geohashes_from_geojson_poly(coverage_geojson, precision):
+    # TODO: better validation
+    assert coverage_geojson["type"] == "FeatureCollection"
+    polygon = coverage_geojson["features"][0]
+    assert polygon["type"] == "Feature"
+    assert polygon["geometry"]["type"] == "Polygon"
+
+    # determine geohashes that overlap our AoI
+    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
+    geohashes_aoi = poly_to_geohashes(
+        geom_polygon, precision=precision, coarse_precision=precision
+    )
+    return geohashes_aoi
+
+
+# Generates a set of geohashes that are covered by a geojson polygon
+def geohashes_from_geojson_points(
+    geohashes_aoi, points_geojson, start_date, end_date, precision
+):
+    assert points_geojson["type"] == "FeatureCollection"
+    points = points_geojson["features"]
+
+    start_iso = date.fromisoformat(start_date)
+    end_iso = date.fromisoformat(end_date)
+
+    # loop through the points of interest and clip each to the geographic and temporal bounds -  we save a list
+    # a list of dates per hash since different points could map to the same bucket at different points
+    # in time
+    geohash_points = {}
+    for point in points:
+        point_iso = parse(point["properties"]["date"]).date()
+
+        if point_iso >= start_iso and point_iso <= end_iso:
+            assert point["type"] == "Feature"
+            assert point["geometry"]["type"] == "Point"
+            assert point["properties"] is not None
+            assert point["properties"]["date"] is not None
+            coords = point["geometry"]["coordinates"]
+
+            gh = geohash.encode(coords[1], coords[0], precision=precision)
+            if gh not in geohashes_aoi:
+                continue
+
+            if gh not in geohash_points:
+                geohash_points[gh] = []
+            geohash_points[gh].append(point_iso)
+
+    return geohash_points
+
+
 # Generates tile fetch requests given an input coverage polygon,
 # geohash precision, start and date, and
 # interval.
 def generate_fetch_requests(
-    coverage_geojson,
-    precision,
+    geohashes_aoi,
     start_date,
     end_date,
     interval_days,
     sampling_rate=1.0,
 ):
-    # TODO: better validation
-    assert coverage_geojson["type"] == "FeatureCollection"
-    polygon = coverage_geojson["features"][0]
-    assert polygon["type"] == "Feature"
-    assert polygon["geometry"]["type"] == "Polygon"
-
-    # determine geohashes that overlap our AoI
-    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
-    geohashes_aoi = poly_to_geohashes(
-        geom_polygon, precision=precision, coarse_precision=precision
-    )
-
-    # randomly sample a subset
-    random.shuffle(geohashes_aoi)
-    subset_length = math.floor(len(geohashes_aoi) * sampling_rate)
-    geohashes_sampled = geohashes_aoi[:subset_length]
-
-    # generate request times
-    return generate_interval_requests(
-        geohashes_sampled, start_date, end_date, interval_days
-    )
-
-
-# Generates tile fetch requests given an input coverage polygon,
-# geohash precision, optional points of interest, start and date, and
-# interval.
-def generate_fetch_requests_poi(
-    coverage_geojson,
-    poi_geojson,
-    precision,
-    start_date,
-    end_date,
-    interval_days=30,
-    poi_expansion=1,
-    sampling_rate=1.0,
-):
-    # TODO: better validation
-    assert coverage_geojson["type"] == "FeatureCollection"
-    polygon = coverage_geojson["features"][0]
-    assert polygon["type"] == "Feature"
-    assert polygon["geometry"]["type"] == "Polygon"
-
-    # determine geohashes that overlap our AoI
-    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
-    geohashes_aoi = poly_to_geohashes(
-        geom_polygon, precision=precision, coarse_precision=precision
-    )
-
-    assert poi_geojson["type"] == "FeatureCollection"
-
-    points = poi_geojson["features"]
-
-    start_iso = date.fromisoformat(start_date)
-    end_iso = date.fromisoformat(end_date)
-
-    geohash_points = set()
-    # loop through the points of interest and clip each to the geographic and time bounds
-    for point in points:
-        assert point["type"] == "Feature"
-        assert point["geometry"]["type"] == "Point"
-        assert point["properties"] is not None
-        assert point["properties"]["date"] is not None
-
-        point_iso = parse(point["properties"]["date"]).date()
-        # point_iso = date.fromisoformat(point["properties"]["date"])
-        if point_iso >= start_iso and point_iso <= end_iso:
-            coords = point["geometry"]["coordinates"]
-            geohash_points.add(
-                geohash.encode(coords[1], coords[0], precision=precision)
-            )
-    clipped_geohashes = geohash_points.intersection(geohashes_aoi)
-
-    # expand outward N steps
-    expansion_geohashes = set(clipped_geohashes)
-    for _ in range(poi_expansion):
-        for geo_hash in list(expansion_geohashes):
-            expansion_geohashes |= set(geohash.expand(geo_hash))
-
-    # clip to geobounds again
-    clipped_expansion_geohashes = list(expansion_geohashes.intersection(geohashes_aoi))
-
-    # grab a random subset of the data and merge it with the original set
-    random.shuffle(clipped_expansion_geohashes)
-    subset_length = math.floor(len(clipped_expansion_geohashes) * sampling_rate)
-    clipped_expansion_geohashes = clipped_expansion_geohashes[:subset_length]
-    clipped_expansion_geohashes.extend(list(clipped_geohashes))
-    final_geohashes = list(set(clipped_expansion_geohashes))
-
-    # generate requests
-    return generate_interval_requests(
-        final_geohashes, start_date, end_date, interval_days
-    )
-
-
-def generate_interval_requests(geohashes, start_date, end_date, interval_days):
-    fetch_requests = []
-
-    # generate request times
+    # determine time intervals
     delta = date.fromisoformat(end_date) - date.fromisoformat(start_date)
+    intervals = []
     for i in range(int(delta.days / interval_days)):
         curr_start_date = date.fromisoformat(start_date) + timedelta(
             days=i * interval_days
         )
         curr_end_date = curr_start_date + timedelta(days=interval_days)
+        intervals.append((curr_start_date, curr_end_date))
 
-        # Create records for each geohash
-        for geohash in geohashes:
-            fetch_requests.append(
-                {
-                    "date_start": str(curr_start_date),
-                    "date_end": str(curr_end_date),
-                    "geohash": geohash,
-                }
-            )
+    # create a final tile list
+    tile_requests = []
+    for gh in geohashes_aoi:
+        for interval in intervals:
+            tile_requests.append((gh, interval))
+
+    # randomly sample the request set
+    random.shuffle(tile_requests)
+    subset_length = math.floor(len(tile_requests) * sampling_rate)
+    tile_requests_sampled = tile_requests[:subset_length]
+
+    unique_hashes = set()
+    for r in tile_requests_sampled:
+        unique_hashes.add(r[0])
+    print(f"unique background tiles: {len(unique_hashes)}")
+    print(f"total background tile requests: {len(tile_requests_sampled)}")
+
+    return tile_requests_sampled
+
+
+# Generates tile fetch requests given an input coverage polygon,
+# geohash precision, optional points of interest, start and date, and
+# interval.
+def generate_fetch_requests_poi(fetch_requests_aoi, geohashes_poi, interval_days):
+    # Create records for each geohash and append them to the AoI list
+    start_len = len(fetch_requests_aoi)
+    fetch_requests = fetch_requests_aoi
+    for gh, dates in geohashes_poi.items():
+        for d in dates:
+            end = d + timedelta(days=interval_days)
+            fetch_requests.append((gh, (d, end)))
+
+    print(f"total poi requests: {len(fetch_requests) - start_len}")
+    print(f"total tile requests (poi + background): {len(fetch_requests)}")
 
     return fetch_requests
 
