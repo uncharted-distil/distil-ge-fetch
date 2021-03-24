@@ -194,7 +194,7 @@ def generate_fetch_requests_poi(fetch_requests_aoi, geohashes_poi, interval_days
     return fetch_requests
 
 
-# Earth Engine collection info.  A more flexible design
+# Earth Engine collection info.
 
 # Sentinel collection name
 SENTINEL_2_COLLECTION = "COPERNICUS/S2"
@@ -216,12 +216,6 @@ SENTINEL_2_CHANNELS = [
     "QA60",
 ]
 
-# Copernicus land cover collection
-COPERNICUS_LAND_COVER_COLLECTION = "COPERNICUS/Landcover/100m/Proba-V-C3/Global"
-
-# Copernicus land cover target channels
-COPERNICUS_LAND_COVER_CHANNELS = ["discrete_classification"]
-
 # Generates an image
 def mask_s2_clouds(image):
     qa = image.select("QA60")
@@ -242,8 +236,9 @@ def fetch_metadata(outdir, collection, bands):
 
     outpath = os.path.join(outdir, "metadata.json")
     dataset = ee.ImageCollection(collection).select(bands)
+
     example_tile_info = dataset.toList(1).get(0).getInfo()
-    # example_tile_info = dataset.toList(1).get(0).getInfo()
+
     with open(outpath, "w") as outfile:
         json.dump(example_tile_info, outfile, indent=4)
     return
@@ -274,7 +269,7 @@ def fetch_tile(loc, outdir, collection, bands):
     # Apply additional cloud filtering for sentinel-2 tiles.
     if collection == SENTINEL_2_COLLECTION:
         filtered_collection = filtered_collection.filter(
-            ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20)
+            ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 10)
         ).map(
             mask_s2_clouds
         )  # Apply cloud mask

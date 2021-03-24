@@ -12,10 +12,13 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Fetches tiles from a Google Earth Engine collection based on time range, "
         + "coverage and geohash level.  All tiles within the coverage area will be fetched by default. "
-        + "If a list of points of interest is provided, tiles overlapping the points, and within a specified "
-        + "cell radius, will be clipped to the coverage area and fetched."
+        + "If a list of points of interest is provided, tiles overlapping the points will be clipped to the"
+        + "coverage area and fetched."
     )
-    parser.add_argument("--collection", type=str, default=helpers.SENTINEL_2_CHANNELS)
+    parser.add_argument("--collection", type=str, default=helpers.SENTINEL_2_COLLECTION)
+    parser.add_argument(
+        "--channels", nargs="+", type=str, default=helpers.SENTINEL_2_CHANNELS
+    )
     parser.add_argument("--outdir", type=str, default="output")
     parser.add_argument("--input_file", type=str)
     parser.add_argument("--coverage_file", type=str)
@@ -26,7 +29,6 @@ def parse_args():
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
     parser.add_argument("--sampling", type=float, default=1.0)
-    parser.add_argument("--expansion", type=int, default=10)
     parser.add_argument(
         "--save_requests", dest="save_requests", default=False, action="store_true"
     )
@@ -50,9 +52,9 @@ def main():
     if args.collection == helpers.SENTINEL_2_COLLECTION:
         collection = args.collection
         bands = helpers.SENTINEL_2_CHANNELS
-    elif args.collection == helpers.COPERNICUS_LAND_COVER_COLLECTION:
+    else:
         collection = args.collection
-        bands = helpers.COPERNICUS_LAND_COVER_CHANNELS
+        bands = args.channels
 
     requests = []
     is_geo_json = False
