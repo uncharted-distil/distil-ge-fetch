@@ -6,6 +6,10 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import ee
 import helpers
+from pathlib import Path
+
+AREA_DIR = "area"
+POI_DIR = "poi"
 
 
 def parse_args():
@@ -29,6 +33,7 @@ def parse_args():
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
     parser.add_argument("--sampling", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--save_requests", dest="save_requests", default=False, action="store_true"
     )
@@ -109,15 +114,20 @@ def main():
             requests.append(
                 {
                     "geohash": d[0],
-                    "date_start": str(d[1][0]),
-                    "date_end": str(d[1][1]),
+                    "poi": d[1],
+                    "date_start": str(d[2][0]),
+                    "date_end": str(d[2][1]),
                 }
             )
 
     # save the metadata associated with the collection and bands we are fetching
     helpers.fetch_metadata(args.outdir, collection, bands)
 
-    os.makedirs(args.outdir, exist_ok=True)
+    if args.poi_file != "":
+        Path(os.path.join(args.outdir, AREA_DIR)).mkdir(parents=True, exist_ok=True)
+        Path(os.path.join(args.outdir, POI_DIR)).mkdir(parents=True, exist_ok=True)
+    else:
+        Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     # save fetched tile info to json if required
     if args.save_requests and is_geo_json:
@@ -129,10 +139,16 @@ def main():
     if not args.skip_fetch:
         jobs = []
         for request in requests:
-            job = delayed(helpers.fetch_tile)(request, args.outdir, collection, bands)
+            # generate target path based on POI presence
+            outdir = args.outdir
+            if args.poi_file != "":
+                subdir = POI_DIR if request["poi"] else AREA_DIR
+                outdir = os.path.join(outdir, subdir)
+
+            job = delayed(helpers.fetch_tile)(request, outdir, collection, bands)
             jobs.append(job)
 
-        random.shuffle(jobs)
+        random.Random(args.seed).shuffle(jobs)
 
         _ = Parallel(
             backend="multiprocessing", n_jobs=args.n_jobs, verbose=1, batch_size=4

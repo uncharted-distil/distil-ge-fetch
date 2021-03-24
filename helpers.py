@@ -20,6 +20,7 @@ import urllib
 from urllib.request import urlretrieve
 import json
 import math
+import pathlib
 
 from shapely.geometry import geo
 
@@ -160,7 +161,7 @@ def generate_fetch_requests(
     tile_requests = []
     for gh in geohashes_aoi:
         for interval in intervals:
-            tile_requests.append((gh, interval))
+            tile_requests.append((gh, False, interval))
 
     # randomly sample the request set
     random.shuffle(tile_requests)
@@ -186,7 +187,7 @@ def generate_fetch_requests_poi(fetch_requests_aoi, geohashes_poi, interval_days
     for gh, dates in geohashes_poi.items():
         for d in dates:
             end = d + timedelta(days=interval_days)
-            fetch_requests.append((gh, (d, end)))
+            fetch_requests.append((gh, True, (d, end)))
 
     print(f"total poi requests: {len(fetch_requests) - start_len}")
     print(f"total tile requests (poi + background): {len(fetch_requests)}")
@@ -251,11 +252,12 @@ def safe_urlretrieve(url, outpath):
 
 
 # Fetch a single tile given request info, collection and bands of interest
-def fetch_tile(loc, outdir, collection, bands):
+def fetch_tile(request, outdir, collection, bands):
+
     # Set tile output path to combo of geohash and start date. Example:
     # scu6k_2015-12-31.zip
     outpath = os.path.join(
-        outdir, loc["geohash"] + "_" + str(loc["date_start"]) + ".zip"
+        outdir, request["geohash"] + "_" + str(request["date_start"]) + ".zip"
     )
 
     # Filter the requested collection by the supplied bands and start/end dates
@@ -263,7 +265,7 @@ def fetch_tile(loc, outdir, collection, bands):
     filtered_collection = (
         ee.ImageCollection(collection)
         .select(bands)
-        .filterDate(loc["date_start"], loc["date_end"])
+        .filterDate(request["date_start"], request["date_end"])
     )
 
     # Apply additional cloud filtering for sentinel-2 tiles.
@@ -275,7 +277,7 @@ def fetch_tile(loc, outdir, collection, bands):
         )  # Apply cloud mask
 
     # Generate a single image for the collection and clip it to our geohash
-    cell = geohashes_to_cells([loc["geohash"]])[0]
+    cell = geohashes_to_cells([request["geohash"]])[0]
     cell_image = (
         filtered_collection.sort("system:index", opt_ascending=False)
         .mosaic()
@@ -285,7 +287,7 @@ def fetch_tile(loc, outdir, collection, bands):
     # Generate a URL from the cell image and download
     try:
         url = cell_image.getDownloadURL(
-            params={"name": loc["geohash"], "crs": "EPSG:4326", "scale": 10}
+            params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
         )
         _ = safe_urlretrieve(url, outpath)
     except:
