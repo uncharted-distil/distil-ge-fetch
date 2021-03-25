@@ -19,9 +19,48 @@ import zipfile
 import os
 import shutil
 import tqdm
-import geojson
-import geohash
 from pathlib import Path
+
+AREA_DIR = "area"
+POI_DIR = "poi"
+
+
+def process_entries(download_location, entries, output_location):
+    for entry in tqdm.tqdm(entries):
+        try:
+            geohash, date = os.path.splitext(entry)[0].split("_")
+            with zipfile.ZipFile(
+                os.path.join(download_location, entry), "r"
+            ) as zip_ref:
+                zip_ref.extractall(temp_path)
+                temp_entries = os.listdir(temp_path)
+            for temp_entry in temp_entries:
+                # generate a new sentinel-like file name for the unzipped entry
+
+                # get the band into sentinel format, ignore the quality file
+                # 'B1' -> 'B01'
+                _, band, _ = temp_entry.split(".")
+                if band == "QA60":
+                    continue
+                if len(band) < 3:
+                    band = f"{band[0]}0{band[1]}"
+
+                # get the date into the sentinel format
+                # 20201112 -> 20201112T000000
+                year, month, day = date.split("-")
+                datestr = f"{year}{month}{day}T000000"
+
+                format_str = f"{geohash}_{datestr}_{band}.tif"
+
+                output_file = os.path.join(output_location, format_str)
+
+                # copy the file to the output dir using its new name
+                p = Path(output_file).parent
+                p.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(os.path.join(temp_path, temp_entry), output_file)
+        except:
+            continue
+        shutil.rmtree(temp_path)
 
 
 def parse_args():
@@ -31,30 +70,14 @@ def parse_args():
     )
     parser.add_argument("--download_location", type=str, required=True)
     parser.add_argument("--output_location", type=str, default=".")
-    parser.add_argument("--poi_file", type=str, default="")
-    parser.add_argument("--precision", type=str, default=5)
     parser.add_argument("--positive_label", type=str, default="positive")
     parser.add_argument("--negative_label", type=str, default="negative")
+    parser.add_argument("--flatten", type=bool, default=False)
 
     return parser.parse_args()
 
 
 args = parse_args()
-
-# generate geohashes for poi file
-poi_included = args.poi_file != None and args.poi_file != ""
-poi_geohashes = set()
-if poi_included:
-    # load the points of interest and store their geohashes as a set
-    feature_collection = geojson.load(open(args.poi_file))
-    for feature in feature_collection.features:
-        poi_geohashes.add(
-            geohash.encode(
-                feature.geometry.coordinates[1],
-                feature.geometry.coordinates[0],
-                precision=args.precision,
-            )
-        )
 
 # create temp dir in the output dir
 temp_path = os.path.join(args.output_location, "temp")
@@ -62,52 +85,27 @@ os.makedirs(temp_path, exist_ok=True)
 
 # read zip file and save geohash, time
 entries = os.listdir(args.download_location)
-for entry in tqdm.tqdm(entries):
-    try:
-        geohash, date = os.path.splitext(entry)[0].split("_")
-        with zipfile.ZipFile(
-            os.path.join(args.download_location, entry), "r"
-        ) as zip_ref:
-            zip_ref.extractall(temp_path)
-            temp_entries = os.listdir(temp_path)
-        for temp_entry in temp_entries:
-            # generate a new sentinel-like file name for the unzipped entry
 
-            # get the band into sentinel format, ignore the quality file
-            # 'B1' -> 'B01'
-            _, band, _ = temp_entry.split(".")
-            if band == "QA60":
-                continue
-            if len(band) < 3:
-                band = f"{band[0]}0{band[1]}"
+# write to pos/neg folders
+if POI_DIR in entries:
+    poi_path = os.path.join(args.download_location, POI_DIR)
+    poi_output_path = (
+        os.path.join(args.output_location, args.positive_label)
+        if not args.flatten
+        else args.output_location
+    )
+    poi_entries = os.listdir(poi_path)
+    process_entries(poi_path, poi_entries, poi_output_path)
 
-            # get the date into the sentinel format
-            # 20201112 -> 20201112T000000
-            year, month, day = date.split("-")
-            datestr = f"{year}{month}{day}T000000"
+area_path = os.path.join(args.download_location, AREA_DIR)
+area_output_path = (
+    os.path.join(args.output_location, args.negative_label)
+    if not args.flatten
+    else args.output_location
+)
+area_entries = os.listdir(area_path)
+process_entries(area_path, area_entries, area_output_path)
 
-            format_str = f"{geohash}_{datestr}_{band}.tif"
-            output_file = ""
-            # generate the output file based on poi status
-            if not poi_included:
-                output_file = os.path.join(args.output_location, format_str)
-            else:
-                if geohash in poi_geohashes:
-                    output_file = os.path.join(
-                        args.output_location, args.positive_label, format_str
-                    )
-                else:
-                    output_file = os.path.join(
-                        args.output_location, args.negative_label, format_str
-                    )
-
-            # copy the file to the output dir using its new name
-            p = Path(output_file).parent
-            p.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(os.path.join(temp_path, temp_entry), output_file)
-    except:
-        continue
-    shutil.rmtree(temp_path)
 
 # copy over metadata file
 shutil.copyfile(

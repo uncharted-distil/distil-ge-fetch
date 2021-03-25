@@ -123,11 +123,8 @@ def main():
     # save the metadata associated with the collection and bands we are fetching
     helpers.fetch_metadata(args.outdir, collection, bands)
 
-    if args.poi_file != "":
-        Path(os.path.join(args.outdir, AREA_DIR)).mkdir(parents=True, exist_ok=True)
-        Path(os.path.join(args.outdir, POI_DIR)).mkdir(parents=True, exist_ok=True)
-    else:
-        Path(args.outdir).mkdir(parents=True, exist_ok=True)
+    Path(os.path.join(args.outdir, AREA_DIR)).mkdir(parents=True, exist_ok=True)
+    Path(os.path.join(args.outdir, POI_DIR)).mkdir(parents=True, exist_ok=True)
 
     # save fetched tile info to json if required
     if args.save_requests and is_geo_json:
@@ -140,10 +137,8 @@ def main():
         jobs = []
         for request in requests:
             # generate target path based on POI presence
-            outdir = args.outdir
-            if args.poi_file != "":
-                subdir = POI_DIR if request["poi"] else AREA_DIR
-                outdir = os.path.join(outdir, subdir)
+            subdir = POI_DIR if request["poi"] else AREA_DIR
+            outdir = os.path.join(args.outdir, subdir)
 
             job = delayed(helpers.fetch_tile)(request, outdir, collection, bands)
             jobs.append(job)
