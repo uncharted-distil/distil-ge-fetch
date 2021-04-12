@@ -73,8 +73,8 @@ def parse_args():
     parser.add_argument("--output_location", type=str, default=".")
     parser.add_argument("--positive_label", type=str, default="positive")
     parser.add_argument("--negative_label", type=str, default="negative")
-    parser.add_argument("--flatten", type=bool, default=False)
-    parser.add_argument("--remove_metadata", type=bool, default=True)
+    parser.add_argument("--flatten", default=False, action="store_true")
+    parser.add_argument("--remove_metadata", default=True, action="store_false")
 
     return parser.parse_args()
 
@@ -100,6 +100,7 @@ if POI_DIR in entries:
     process_entries(poi_path, poi_entries, poi_output_path)
 
 area_path = os.path.join(args.download_location, AREA_DIR)
+
 area_output_path = (
     os.path.join(args.output_location, args.negative_label)
     if not args.flatten
