@@ -60,6 +60,7 @@ def process_entries(download_location, entries, output_location):
                 shutil.copyfile(os.path.join(temp_path, temp_entry), output_file)
         except:
             continue
+
         shutil.rmtree(temp_path)
 
 
@@ -73,6 +74,7 @@ def parse_args():
     parser.add_argument("--positive_label", type=str, default="positive")
     parser.add_argument("--negative_label", type=str, default="negative")
     parser.add_argument("--flatten", type=bool, default=False)
+    parser.add_argument("--remove_metadata", type=bool, default=True)
 
     return parser.parse_args()
 
@@ -108,7 +110,8 @@ process_entries(area_path, area_entries, area_output_path)
 
 
 # copy over metadata file
-shutil.copyfile(
-    os.path.join(args.download_location, "metadata.json"),
-    os.path.join(args.output_location, "metadata.json"),
-)
+if not args.remove_metadata:
+    shutil.copyfile(
+        os.path.join(args.download_location, "metadata.json"),
+        os.path.join(args.output_location, "metadata.json"),
+    )
