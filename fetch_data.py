@@ -88,7 +88,7 @@ def main():
             args.sampling,
         )
 
-        if args.poi_file is not None:
+        if args.poi_file is not None and args.poi_file is not "":
             # load points of interest from geo json file
             poi_geojson = json.load(open(args.poi_file))
 
