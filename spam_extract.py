@@ -60,7 +60,8 @@ def main():
     flattened_gh = []
     for idx, gh_set in enumerate(geohashes):
         b = bounds[idx].exterior.coords
-        bounds_str = f"{b[0][0]},{b[0][1]},{b[1][0]},{b[1][1]},{b[2][0]},{b[2][1]},{b[3][0]},{b[3][1]}"
+        # Shapely stores BB LR, CCW.  Distil needs LL, CCW
+        bounds_str = f"{b[3][0]},{b[3][1]},{b[0][0]},{b[0][1]},{b[1][0]},{b[1][1]},{b[2][0]},{b[2][1]}"
         for gh in gh_set:
             flattened_gh.append((idx, gh, bounds_str))
 
