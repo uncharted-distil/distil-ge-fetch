@@ -3,7 +3,6 @@ import pandas as pd
 from shapely import geometry
 import helpers
 import geohash
-import matplotlib.pyplot as plt
 
 CELL_SIZE_X = 360.0 / 4320.0
 CELL_SIZE_Y = 180.0 / 2160.0
@@ -16,7 +15,7 @@ def parse_args():
     parser.add_argument("--input_file", type=str, required=True)
     parser.add_argument("--output_file", type=str, default="./output.csv")
     parser.add_argument("--country_iso", type=str)
-    parser.add_argument("--crop_column", type=str, required=True)
+    parser.add_argument("--crop_columns", nargs="+", type=str, required=True)
     parser.add_argument("--geohash_level", type=int, default=5)
 
     return parser.parse_args()
@@ -41,10 +40,8 @@ def main():
         df = df.loc[df["iso3"] == args.country_iso]
 
     # extract x, y locations and crop of interest
-    df = df[["x", "y", args.crop_column]]
+    df = df[(["x", "y"] + args.crop_columns)]
     df = df.reset_index()
-    # df.plot(x="x", y="y", kind="scatter", c=args.crop_column, colormap="YlOrRd")
-    # plt.show()
 
     # loop over the x, y which are the cell centroids, and generate a bounding box based on
     # the cell size (taken from the associated geotiff resolution)
