@@ -2,7 +2,6 @@ import argparse
 import pandas as pd
 from shapely import geometry
 import helpers
-import geohash
 
 CELL_SIZE_X = 360.0 / 4320.0
 CELL_SIZE_Y = 180.0 / 2160.0
@@ -19,14 +18,6 @@ def parse_args():
     parser.add_argument("--geohash_level", type=int, default=5)
 
     return parser.parse_args()
-
-
-def geohash_to_array_str(geohash_str):
-    # return geohash as a flat list with alternating X,Y values, starting
-    # at LL and moving CW
-    lat, lon, lat_d, lon_d = geohash.decode_exactly(geohash_str)
-    bounds = f"{lon-lon_d},{lat-lat_d},{lon-lon_d},{lat+lat_d},{lon+lon_d},{lat+lat_d},{lon+lon_d},{lat-lat_d}"
-    return bounds
 
 
 def main():
@@ -66,7 +57,7 @@ def main():
     flattened_gh = []
     for idx, gh_set in enumerate(geohashes):
         for gh in gh_set:
-            bounds_str = geohash_to_array_str(gh)
+            bounds_str = helpers.geohash_to_array_str(gh)
             flattened_gh.append((idx, gh, bounds_str))
 
     # store as a dataframe with any geohashes that were part of 2 cells reduced to 1

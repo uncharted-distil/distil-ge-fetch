@@ -102,6 +102,14 @@ def geohashes_from_geojson_poly(coverage_geojson, precision):
     return geohashes_aoi
 
 
+def geohash_to_array_str(geohash_str):
+    # return geohash as a flat list with alternating X,Y values, starting
+    # at LL and moving CW
+    lat, lon, lat_d, lon_d = geohash.decode_exactly(geohash_str)
+    bounds = f"{lon-lon_d},{lat-lat_d},{lon-lon_d},{lat+lat_d},{lon+lon_d},{lat+lat_d},{lon+lon_d},{lat-lat_d}"
+    return bounds
+
+
 # Generates a set of geohashes that are covered by a geojson polygon
 def geohashes_from_geojson_points(
     geohashes_aoi, points_geojson, start_date, end_date, precision
