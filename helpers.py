@@ -62,7 +62,7 @@ GEOHASH_CHARACTERS = [
 
 # Converts a polygon into a list of intersected / contained geohashes
 def poly_to_geohashes(polygon, precision=6, coarse_precision=None, inner=True):
-    polygon = geometry.shape(polygon.toGeoJSON())
+    polygon = geometry.shape(polygon)
     if coarse_precision is None:
         geohashes = polygon_to_geohashes(polygon, precision=precision, inner=inner)
     else:
@@ -95,9 +95,8 @@ def geohashes_from_geojson_poly(coverage_geojson, precision):
     assert polygon["geometry"]["type"] == "Polygon"
 
     # determine geohashes that overlap our AoI
-    geom_polygon = ee.Geometry.Polygon(polygon["geometry"]["coordinates"])
     geohashes_aoi = poly_to_geohashes(
-        geom_polygon, precision=precision, coarse_precision=precision
+        polygon["geometry"], precision=precision, coarse_precision=precision
     )
     return geohashes_aoi
 
