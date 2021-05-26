@@ -74,7 +74,7 @@ def parse_args():
     parser.add_argument("--positive_label", type=str, default="positive")
     parser.add_argument("--negative_label", type=str, default="negative")
     parser.add_argument("--flatten", default=False, action="store_true")
-    parser.add_argument("--remove_metadata", default=True, action="store_false")
+    parser.add_argument("--keep_metadata", default=True, action="store_false")
 
     return parser.parse_args()
 
@@ -111,7 +111,7 @@ process_entries(area_path, area_entries, area_output_path)
 
 
 # copy over metadata file
-if not args.remove_metadata:
+if args.keep_metadata:
     shutil.copyfile(
         os.path.join(args.download_location, "metadata.json"),
         os.path.join(args.output_location, "metadata.json"),
