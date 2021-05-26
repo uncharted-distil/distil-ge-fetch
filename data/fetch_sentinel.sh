@@ -17,8 +17,8 @@ python3 fetch_data.py \
 # no_swarm_sighting (area sample)
 python3 create_dataset.py \
     --download_location data/shire_test \
-    --output_location data/shire_test_sentinel
-    --positive_label swarm_sighting
+    --output_location data/shire_test_sentinel \
+    --positive_label swarm_sighting \
     --negative_label no_swarm_sighting
 
 # fetch matching soil moisture data - uses saved requests to ensure the same tile set is generated
