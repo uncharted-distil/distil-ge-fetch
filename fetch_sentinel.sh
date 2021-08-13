@@ -33,5 +33,5 @@ python3 fetch_data.py \
 python3 create_dataset.py \
     --download_location data/shire_test_moisture \
     --output_location data/shire_test_moisture_sentinel \
-    --flatten
-
+    --flatten \
+    --keep_metadata
