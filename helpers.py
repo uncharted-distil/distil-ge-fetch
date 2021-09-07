@@ -236,10 +236,6 @@ def mask_s2_clouds(image):
 
     return image.updateMask(mask)
 
-# sets the 'count' property to the number of bands returned for this particular image if 0 then the image is empty
-def band_count(image):
-    return image.set('bandNames', image.bandNames())
-
 # Write the metadata from the first tile in the collection out
 def fetch_metadata(outdir, collection, bands):
     if not os.path.exists(outdir):
