@@ -236,6 +236,9 @@ def mask_s2_clouds(image):
 
     return image.updateMask(mask)
 
+# sets the 'count' property to the number of bands returned for this particular image if 0 then the image is empty
+def band_count(image):
+    return image.set('bandNames', image.bandNames())
 
 # Write the metadata from the first tile in the collection out
 def fetch_metadata(outdir, collection, bands):
@@ -261,18 +264,21 @@ def safe_urlretrieve(url, outpath):
 # Fetch a single tile given request info, collection and bands of interest
 def fetch_tile(request, outdir, collection, bands):
 
-    # Set tile output path to combo of geohash and start date. Example:
-    # scu6k_2015-12-31.zip
+    # Set tile output path to combo of geohash the date and extension is added later
     outpath = os.path.join(
-        outdir, request["geohash"] + "_" + str(request["date_start"]) + ".zip"
+        outdir, request["geohash"] + "_" 
     )
-
+    # get the bounding quad for the geohash
+    cell = geohashes_to_cells([request["geohash"]])[0]
     # Filter the requested collection by the supplied bands and start/end dates
     # for the request.
     filtered_collection = (
         ee.ImageCollection(collection)
         .select(bands)
         .filterDate(request["date_start"], request["date_end"])
+        .filterBounds(ee.Geometry.Point(cell._coordinates[0][0])) # filter by top left point of quad (note: this is an intersection filter)
+        .filterBounds(ee.Geometry.Point(cell._coordinates[0][2])) # filter by bottom right point of quad (note: this is an intersection filter)
+        # the result of the two filterBounds is a tile the contains all of our quad
     )
 
     # Apply additional cloud filtering for sentinel-2 tiles.
@@ -280,20 +286,25 @@ def fetch_tile(request, outdir, collection, bands):
         filtered_collection = filtered_collection.filter(
             ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 10)
         ).map(
-            mask_s2_clouds
+            mask_s2_clouds, True
         )  # Apply cloud mask
-
-    # Generate a single image for the collection and clip it to our geohash
-    cell = geohashes_to_cells([request["geohash"]])[0]
-    cell_image = (
-        filtered_collection.sort("system:index", opt_ascending=False)
-        .mosaic()
-        .clip(cell)
-    )
-
+    # here we are getting the bands getInfo() is an api call 
+    count = filtered_collection.count().getInfo()
+    # if there is no bands returned then there are no images for this specific geohash given the constraints above
+    if not len(count['bands']):
+        print("missing images for: ", [request["geohash"]])
+        return
+    # grab the first tile from the collection which should be the earliest tile
+    first_image = filtered_collection.first()
+    # grab the tiles actual date that it was taken
+    image_date = first_image.date().format("yyyy-MM-dd").getInfo()
+    # apply date and file extension to the path
+    outpath += image_date + ".zip"
+    # clip the tile, we are looking for a consistent tile size so clipping is necessary
+    clipped_image = first_image.clip(cell)
     # Generate a URL from the cell image and download
     try:
-        url = cell_image.getDownloadURL(
+        url = clipped_image.getDownloadURL(
             params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
         )
         _ = safe_urlretrieve(url, outpath)
