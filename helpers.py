@@ -4,6 +4,7 @@ from https://github.com/cfld/locusts/, with a small amount of cleanup done.
 """
 
 import os
+from ee import image
 from shapely import geometry
 from itertools import product
 import geohash
@@ -21,6 +22,10 @@ from urllib.request import urlretrieve
 import json
 import math
 import pathlib
+import zipfile
+import io
+from tifffile import imread
+
 
 from shapely.geometry import geo
 
@@ -256,6 +261,14 @@ def fetch_metadata(outdir, collection, bands):
 def safe_urlretrieve(url, outpath):
     _ = urlretrieve(url, outpath)
 
+# loads tile returns false if image is all black
+def is_valid_tile(file_path: str) -> bool:
+    archive = zipfile.ZipFile(file_path, 'r')
+    file_list = archive.namelist()
+    bytes = io.BytesIO(archive.read(file_list[0]))
+    img = imread(bytes)
+
+    return img.max() != 0
 
 # Fetch a single tile given request info, collection and bands of interest
 def fetch_tile(request, outdir, collection, bands):
@@ -276,7 +289,6 @@ def fetch_tile(request, outdir, collection, bands):
         .filterBounds(ee.Geometry.Point(cell._coordinates[0][2])) # filter by bottom right point of quad (note: this is an intersection filter)
         # the result of the two filterBounds is a tile the contains all of our quad
     )
-
     # Apply additional cloud filtering for sentinel-2 tiles.
     if collection == SENTINEL_2_COLLECTION:
         filtered_collection = filtered_collection.filter(
@@ -290,19 +302,26 @@ def fetch_tile(request, outdir, collection, bands):
     if not len(count['bands']):
         print("missing images for: ", [request["geohash"]])
         return
-    # grab the first tile from the collection which should be the earliest tile
-    first_image = filtered_collection.first()
-    # grab the tiles actual date that it was taken
-    image_date = first_image.date().format("yyyy-MM-dd").getInfo()
-    # apply date and file extension to the path
-    outpath += image_date + ".zip"
-    # clip the tile, we are looking for a consistent tile size so clipping is necessary
-    clipped_image = first_image.clip(cell)
-    # Generate a URL from the cell image and download
-    try:
-        url = clipped_image.getDownloadURL(
-            params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
-        )
-        _ = safe_urlretrieve(url, outpath)
-    except:
-        pass
+    img_list = filtered_collection.toList(filtered_collection.size())
+    list_size = img_list.size().getInfo()
+    for i in range(list_size):
+        index_image = ee.Image(img_list.get(i))
+            # grab the tiles actual date that it was taken
+        image_date = index_image.date().format("yyyy-MM-dd").getInfo()
+        # apply date and file extension to the path
+        tmp_outpath = outpath+image_date + ".zip"
+        # clip the tile, we are looking for a consistent tile size so clipping is necessary
+        clipped_image = index_image.clip(cell)
+        # Generate a URL from the cell image and download
+        try:
+            url = clipped_image.getDownloadURL(
+                params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
+            )
+            _ = safe_urlretrieve(url, tmp_outpath)
+            # valid tile for constraints and location move on
+            if is_valid_tile(tmp_outpath):
+                break
+            # invalid tile clean up zip file and continue checking other images in collection
+            os.remove(tmp_outpath)
+        except:
+            pass
