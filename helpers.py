@@ -157,17 +157,21 @@ def generate_fetch_requests(
     start_date,
     end_date,
     interval_days,
+    fetch_latest,
     sampling_rate=1.0,
-):
+):      
     # determine time intervals
     delta = date.fromisoformat(end_date) - date.fromisoformat(start_date)
     intervals = []
-    for i in range(int(delta.days / interval_days)):
-        curr_start_date = date.fromisoformat(start_date) + timedelta(
-            days=i * interval_days
-        )
-        curr_end_date = curr_start_date + timedelta(days=interval_days)
-        intervals.append((curr_start_date, curr_end_date))
+    if not fetch_latest:
+        for i in range(int(delta.days / interval_days)):
+            curr_start_date = date.fromisoformat(start_date) + timedelta(
+                days=i * interval_days
+            )
+            curr_end_date = curr_start_date + timedelta(days=interval_days)
+            intervals.append((curr_start_date, curr_end_date))
+    else:
+        intervals = [(start_date, end_date)]
 
     # create a final tile list
     tile_requests = []
@@ -211,6 +215,10 @@ def generate_fetch_requests_poi(fetch_requests_aoi, geohashes_poi, interval_days
 
 # Sentinel collection name
 SENTINEL_2_COLLECTION = "COPERNICUS/S2"
+
+MIN_DS_DATE = {
+    "COPERNICUS/S2": '2015-06-23'
+}
 
 # Sentinel-2 target channels
 SENTINEL_2_CHANNELS = [
@@ -269,6 +277,41 @@ def is_valid_tile(file_path: str) -> bool:
     img = imread(bytes)
 
     return img.max() != 0
+# download_image is a recursion based function designed to pop the first image from the image collection if it does not pass validation and move onto the next
+# one thing to note is that this is the optimal approach currently when dealing with the earth engine api
+# converting the collection to a list locally does not scale and the api will refuse when dealing with 1000s
+# this function scales
+def download_image(image_collection: ee.ImageCollection, cell: ee.Geometry, output_dir: str, request) -> None:
+    # get size of collection if 0 there was no valid images in the collection for this geohash and constraints
+    size = image_collection.size().getInfo() 
+    if not size:
+        return
+    # get first image from collection
+    first_image = image_collection.first()
+    # get the meat info surrounding the image which is used later to remove if the image is bad
+    image_meta = first_image.getInfo()
+    # get the date and format it
+    image_date = first_image.date().format("yyyy-MM-dd").getInfo()
+    # output directory
+    tmp_outpath = output_dir + image_date + ".zip"    
+    # clip the desired image
+    clipped_image = first_image.clip(cell)
+    try:
+        url = clipped_image.getDownloadURL(
+            params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
+        )
+        # download image
+        _ = safe_urlretrieve(url, tmp_outpath)
+        # valid tile for constraints and location move on
+        if is_valid_tile(tmp_outpath):
+            return
+        # invalid tile clean up zip file and continue checking other images in collection
+        os.remove(tmp_outpath)
+        # remove the image from the collection as it was bad and download the next image in the collection
+        download_image(image_collection.filter(ee.Filter.neq('system:index', image_meta["properties"]["system:index"])), cell, output_dir, request)
+    except:
+            pass
+    return
 
 # Fetch a single tile given request info, collection and bands of interest
 def fetch_tile(request, outdir, collection, bands):
@@ -287,6 +330,7 @@ def fetch_tile(request, outdir, collection, bands):
         .filterDate(request["date_start"], request["date_end"])
         .filterBounds(ee.Geometry.Point(cell._coordinates[0][0])) # filter by top left point of quad (note: this is an intersection filter)
         .filterBounds(ee.Geometry.Point(cell._coordinates[0][2])) # filter by bottom right point of quad (note: this is an intersection filter)
+        .sort("system:time_start", False)
         # the result of the two filterBounds is a tile the contains all of our quad
     )
     # Apply additional cloud filtering for sentinel-2 tiles.
@@ -296,32 +340,4 @@ def fetch_tile(request, outdir, collection, bands):
         ).map(
             mask_s2_clouds, True
         )  # Apply cloud mask
-    # here we are getting the bands getInfo() is an api call 
-    count = filtered_collection.count().getInfo()
-    # if there is no bands returned then there are no images for this specific geohash given the constraints above
-    if not len(count['bands']):
-        print("missing images for: ", [request["geohash"]])
-        return
-    img_list = filtered_collection.toList(filtered_collection.size())
-    list_size = img_list.size().getInfo()
-    for i in range(list_size):
-        index_image = ee.Image(img_list.get(i))
-            # grab the tiles actual date that it was taken
-        image_date = index_image.date().format("yyyy-MM-dd").getInfo()
-        # apply date and file extension to the path
-        tmp_outpath = outpath+image_date + ".zip"
-        # clip the tile, we are looking for a consistent tile size so clipping is necessary
-        clipped_image = index_image.clip(cell)
-        # Generate a URL from the cell image and download
-        try:
-            url = clipped_image.getDownloadURL(
-                params={"name": request["geohash"], "crs": "EPSG:4326", "scale": 10}
-            )
-            _ = safe_urlretrieve(url, tmp_outpath)
-            # valid tile for constraints and location move on
-            if is_valid_tile(tmp_outpath):
-                break
-            # invalid tile clean up zip file and continue checking other images in collection
-            os.remove(tmp_outpath)
-        except:
-            pass
+    download_image(filtered_collection, cell, outpath, request)

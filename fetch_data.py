@@ -7,6 +7,7 @@ from tqdm import tqdm
 import ee
 import helpers
 from pathlib import Path
+from datetime import datetime
 
 AREA_DIR = "area"
 POI_DIR = "poi"
@@ -29,7 +30,7 @@ def parse_args():
     parser.add_argument("--poi_file", type=str, default="")
     parser.add_argument("--precision", type=int, default=5)
     parser.add_argument("--start_date", type=str, default="2020-01-01")
-    parser.add_argument("--end_date", type=str, default="2020-02-01")
+    parser.add_argument("--end_date", type=str, default=datetime.today().strftime("%Y-%m-%d")) # today's date
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--n_jobs", type=int, default=30)
     parser.add_argument("--sampling", type=float, default=1.0)
@@ -40,6 +41,7 @@ def parse_args():
     parser.add_argument(
         "--skip_fetch", dest="skip_fetch", default=False, action="store_true"
     )
+    parser.add_argument("--fetch_latest", dest="fetch_latest", default=False, action="store_true")
 
     return parser.parse_args()
 
@@ -60,6 +62,9 @@ def main():
     else:
         collection = args.collection
         bands = args.channels
+    # if fetch latest the start date is set to the earliest date in ds
+    if args.fetch_latest:
+        args.start_date = helpers.MIN_DS_DATE[args.collection]
 
     requests = []
     is_geo_json = False
@@ -85,6 +90,7 @@ def main():
             args.start_date,
             args.end_date,
             args.interval,
+            args.fetch_latest,
             args.sampling,
         )
 
