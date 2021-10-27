@@ -4,6 +4,7 @@ from shapely import geometry
 import helpers
 import json
 from polygon_geohasher import polygon_geohasher
+from tqdm import tqdm
 
 CELL_SIZE_X = 360.0 / 4320.0
 CELL_SIZE_Y = 180.0 / 2160.0
@@ -27,9 +28,11 @@ def main():
     args = parse_args()
 
     # load the csv file into pandas for cleanup
+    print('Loading...')
     df = pd.read_csv(args.input_file)
 
     # filter down to area of interest records
+    print('Finding AoI...')
     geohashes_aoi = set()
     if args.coverage_file is not None:
         # loading coverage polygon from geo json file
@@ -49,6 +52,7 @@ def main():
 
     # loop over the x, y which are the cell centroids, and generate a bounding box based on
     # the cell size (taken from the associated geotiff resolution)
+    print('Converting points to bounds...')
     centroids = zip(df["x"], df["y"])
     bounds = [
         geometry.box(
@@ -57,20 +61,22 @@ def main():
             c[0] + CELL_SIZE_X / 2,
             c[1] + CELL_SIZE_Y / 2,
         )
-        for c in centroids
+        for c in tqdm(centroids)
     ]
 
     # loop through the bounds we've created and intersect each with the intended geohash grid
+    print('Converting bounds to geohashes...')
     geohashes = [
         polygon_geohasher.polygon_to_geohashes(
             b, precision=args.geohash_level, inner=False
         )
-        for b in bounds
+        for b in tqdm(bounds)
     ]
 
     # flatten  gh set for each cell preserving index - no clean way to do this in pandas
     flattened_gh = []
-    for idx, gh_set in enumerate(geohashes):
+    print('Clipping geohashes to AoI...')
+    for idx, gh_set in tqdm(enumerate(geohashes)):
         for gh in gh_set:
             if (len(geohashes_aoi) > 0 and gh in geohashes_aoi) or len(
                 geohashes_aoi
@@ -81,6 +87,7 @@ def main():
     # store as a dataframe with any geohashes that were part of 2 cells reduced to 1
     # a better implementation of this would take the value of both cells into  account and
     # compute a final adjusted value for the given geohash
+    print('Genering output csv...')
     geohash_df = pd.DataFrame(flattened_gh, columns=["cell", "geohash", "bounds"])
     geohash_df = geohash_df.drop_duplicates(subset="geohash", keep="first")
     geohash_df = geohash_df.set_index("cell")
